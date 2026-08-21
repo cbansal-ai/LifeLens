@@ -13,6 +13,13 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
+def classify_question(prompt):
+    response = client.responses.create(
+        model="gpt-5",
+        input=prompt
+    )
+    return response.output_text
+
 def ask_llm(events, question):
     prompt = f"""
 You are a helpful personal assistant.

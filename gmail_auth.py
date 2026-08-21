@@ -27,7 +27,7 @@ def extract_body(payload):
     return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
 
 
-def authenticate_gmail():
+def authenticate_gmail(): # 11111 
     """Authenticate with Gmail."""
 
     flow = InstalledAppFlow.from_client_secrets_file(
@@ -40,7 +40,7 @@ def authenticate_gmail():
     return build("gmail", "v1", credentials=creds)
 
 
-def fetch_emails(service):
+def fetch_emails(service):  # 2222 
     """Fetch Gmail messages."""
 
     profile = service.users().getProfile(userId="me").execute()
@@ -62,7 +62,7 @@ def fetch_emails(service):
     return account_email, messages
 
 
-def process_emails(service, account_email, messages):
+def process_emails(service, account_email, messages): # 3333 
     """Extract events and save them to Supabase."""
 
     if not messages:
@@ -127,7 +127,7 @@ def process_emails(service, account_email, messages):
     print("\nDone! Emails saved to emails.txt")
 
 
-def display_timeline():
+def display_timeline():  # 4444
     """Display event timeline."""
 
     events = get_events()
@@ -143,7 +143,7 @@ def display_timeline():
         print(f"{icon} {formatted_date} | {event['title']}")
 
 
-def chat():
+def chat():  # 5555
     """Simple chat interface."""
 
     events = get_all_events()
@@ -162,10 +162,10 @@ def chat():
 if __name__ == "__main__":
 
     # Uncomment these when you want to process Gmail again.
-    #
-    # service = authenticate_gmail()
-    # account_email, messages = fetch_emails(service)
-    # process_emails(service, account_email, messages)
+    
+    service = authenticate_gmail()
+    account_email, messages = fetch_emails(service)
+    process_emails(service, account_email, messages)
 
     display_timeline()
 

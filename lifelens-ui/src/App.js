@@ -3,18 +3,29 @@ import "./App.css";
 import Timeline from "./Timeline";
 
 function App() {
-  const [page, setPage] = useState("chat");
+  const [page, setPage] = useState("home");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const askQuestion = async () => {
-    if (!question.trim()) return;
+  const askQuestion = async () => 
+    {
+      if (!question.trim()) {
+  setMessages((prevMessages) => [
+    ...prevMessages,
+    {
+      sender: "ai",
+      text: "Please enter a question."
+    }
+  ]);
+  return;
+    }
 
-    const userMessage = {
+      const userMessage = 
+      {
       sender: "user",
       text: question,
-    };
+      };
 
     setMessages((prevMessages) => [...prevMessages, userMessage]);
 
@@ -33,13 +44,27 @@ function App() {
 
       const data = await response.json();
 
+      if (!response.ok) {
+        setMessages((prevMessages) => [
+          ...prevMessages,
+        {
+        sender: "ai",
+        text: data.detail,
+        },
+  ]);
+
+  setLoading(false);
+  return;
+}
+
       const aiMessage = {
         sender: "ai",
         text: data.answer,
       };
 
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
-    } catch (error) {
+    } 
+    catch (error) {
       console.error(error);
 
       setMessages((prevMessages) => [
@@ -53,19 +78,19 @@ function App() {
 
     setQuestion("");
     setLoading(false);
-  };
+  };  
 
   return (
     <div className="container">
       <h1>LifeLens</h1>
 
       <div className="nav-buttons">
-        <button onClick={() => setPage("chat")}>Chat</button>
-
+        
+        <button onClick={() => setPage("home")}>Home</button>
         <button onClick={() => setPage("timeline")}>Timeline</button>
       </div>
 
-      {page === "chat" && (
+      {page === "home" && (
         <>
           <div className="chat-box">
             {messages.map((message, index) => (

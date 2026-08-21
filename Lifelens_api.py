@@ -1,9 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from httpcore import request
 from pydantic import BaseModel
 
 from llm_extractor import ask_llm
 from supabase_client import get_all_events
+from fastapi import HTTPException 
+from guardrails import validate_input
+
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s"
+)
 
 app = FastAPI()
 
@@ -32,8 +42,24 @@ def home():
 
 @app.post("/chat")
 def chat(request: ChatRequest):
+
+    logging.info(f"Question received: {request.question}")
+
+    valid, message = validate_input(request.question)
+
+    if not valid:
+        logging.warning(message)
+
+        raise HTTPException(
+            status_code=400,
+            detail=message,
+        )
+
     events = get_all_events()
+
     answer = ask_llm(events, request.question)
+
+    logging.info("Answer returned successfully")
 
     return {
         "answer": answer
@@ -45,3 +71,5 @@ def chat(request: ChatRequest):
 def timeline():
     events = get_all_events()
     return events
+
+

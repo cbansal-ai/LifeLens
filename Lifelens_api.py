@@ -1,7 +1,8 @@
 import logging
+from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -9,6 +10,7 @@ from agent import agent
 from gmail_auth import authenticate_gmail
 from guardrails import validate_input
 from llm_extractor import ask_llm
+from rag.ingest import index_pdf
 from supabase_client import get_all_events
 
 logging.basicConfig(
@@ -17,6 +19,11 @@ logging.basicConfig(
 )
 
 app = FastAPI()
+
+BASE_DIR = Path(__file__).resolve().parent
+DOCUMENTS_DIR = BASE_DIR / "rag" / "documents"
+DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024
 
 # Allow the local React UI to communicate with FastAPI.
 app.add_middleware(
@@ -82,6 +89,44 @@ def change_user(request: ChangeUserRequest):
             status_code=500,
             detail=f"Gmail authentication failed: {str(exc)}",
         ) from exc
+
+
+@app.post("/documents/upload")
+async def upload_document(file: UploadFile = File(...)):
+    """Validate, save, and index an uploaded PDF into the LifeLens ChromaDB."""
+    filename = Path(file.filename or "").name
+
+    if not filename or not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a PDF file.")
+
+    contents = await file.read()
+
+    if not contents.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
+
+    if len(contents) > MAX_PDF_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="PDF must be 10 MB or smaller.")
+
+    destination = DOCUMENTS_DIR / filename
+
+    try:
+        destination.write_bytes(contents)
+        result = index_pdf(destination)
+    except Exception as exc:
+        logging.exception("PDF upload/indexing failed")
+        if destination.exists():
+            destination.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not index the uploaded PDF.",
+        ) from exc
+    finally:
+        await file.close()
+
+    return {
+        "message": "PDF uploaded and indexed successfully.",
+        **result,
+    }
 
 
 @app.post("/chat")

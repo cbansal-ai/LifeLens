@@ -5,16 +5,15 @@ from datetime import datetime
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from llm_extractor import extract_event, ask_llm
-from supabase_client import save_event, get_events, get_all_events
 from constants import icons
+from llm_extractor import ask_llm, extract_event
+from supabase_client import get_all_events, get_events, save_event
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
 def extract_body(payload):
     """Extract email body."""
-
     if "parts" in payload:
         data = payload["parts"][0]["body"].get("data")
     else:
@@ -28,7 +27,6 @@ def extract_body(payload):
 
 def authenticate_gmail(expected_email=None, force_consent=False):
     """Authenticate with Gmail and optionally verify the selected account."""
-
     flow = InstalledAppFlow.from_client_secrets_file(
         "credentials.json",
         SCOPES,
@@ -40,7 +38,6 @@ def authenticate_gmail(expected_email=None, force_consent=False):
         oauth_kwargs["login_hint"] = expected_email
 
     if force_consent:
-        # Force Google to show account selection/consent for Change User.
         oauth_kwargs["prompt"] = "consent select_account"
 
     creds = flow.run_local_server(
@@ -63,31 +60,33 @@ def authenticate_gmail(expected_email=None, force_consent=False):
     return service
 
 
-def fetch_emails(service):  # 2222 
-    """Fetch Gmail messages."""
+def fetch_emails(service, query=None, max_results=10):
+    """
+    Fetch Gmail messages.
 
+    query can be any Gmail search expression, for example:
+    "after:2026/08/01" or "from:airline@example.com".
+    If query is omitted, the most recent messages are returned.
+    """
     profile = service.users().getProfile(userId="me").execute()
     account_email = profile["emailAddress"]
 
-    results = (
-        service.users()
-        .messages()
-        .list(
-            userId="me",
-            q="from:chhayaban@yahoo.com after:2026/07/21",
-            maxResults=10,
-        )
-        .execute()
-    )
+    list_kwargs = {
+        "userId": "me",
+        "maxResults": max_results,
+    }
 
+    if query:
+        list_kwargs["q"] = query
+
+    results = service.users().messages().list(**list_kwargs).execute()
     messages = results.get("messages", [])
 
     return account_email, messages
 
 
-def process_emails(service, account_email, messages): # 3333 
+def process_emails(service, account_email, messages):
     """Extract events and save them to Supabase."""
-
     if not messages:
         print("No emails found.")
         return
@@ -95,9 +94,7 @@ def process_emails(service, account_email, messages): # 3333
     print(f"Found {len(messages)} emails.\n")
 
     with open("emails.txt", "w", encoding="utf-8") as f:
-
         for message in messages:
-
             msg = (
                 service.users()
                 .messages()
@@ -150,9 +147,8 @@ def process_emails(service, account_email, messages): # 3333
     print("\nDone! Emails saved to emails.txt")
 
 
-def display_timeline():  # 4444
+def display_timeline():
     """Display event timeline."""
-
     events = get_events()
 
     print("\nTimeline")
@@ -166,11 +162,11 @@ def display_timeline():  # 4444
         print(f"{icon} {formatted_date} | {event['title']}")
 
 
-def chat():  # 5555
-    """Simple chat interface."""
-
+def chat():
+    """Simple local chat interface."""
     events = get_all_events()
     print(events)
+
     while True:
         question = input("\nAsk a question (type 'exit' to quit): ")
 
@@ -178,18 +174,20 @@ def chat():  # 5555
             break
 
         answer = ask_llm(events, question)
-
         print(f"\nAI: {answer}")
 
 
 if __name__ == "__main__":
-
-    # Uncomment these when you want to process Gmail again.
-    
     service = authenticate_gmail()
-    account_email, messages = fetch_emails(service)
+
+    # Optional Gmail search. Set to None to fetch the latest messages.
+    gmail_query = None
+    account_email, messages = fetch_emails(
+        service,
+        query=gmail_query,
+        max_results=10,
+    )
+
     process_emails(service, account_email, messages)
-
     display_timeline()
-
     chat()

@@ -1,24 +1,30 @@
-from langchain.tools import tool
 import json
 import logging
 from urllib import request as urllib_request
 from urllib.error import HTTPError, URLError
 
+from langchain.tools import tool
+
 CHAT_API_URL = "http://127.0.0.1:8000/chat"
 
 
 @tool
-def search_timeline(question: str) -> str:
+def search_timeline(question: str, account_email: str) -> str:
     """
-    Search Gmail-derived LifeLens events that are already stored in the
-    timeline database. The tool calls the existing FastAPI /chat endpoint,
-    which reads the saved events and uses the LLM to answer the question.
+    Search Gmail-derived LifeLens events for the active user.
+
+    Args:
+        question: The user's timeline question.
+        account_email: The active LifeLens Gmail account.
     """
     logging.info("Timeline Tool selected")
 
-    payload = json.dumps({
-        "question": question
-    }).encode("utf-8")
+    payload = json.dumps(
+        {
+            "question": question,
+            "account_email": account_email,
+        }
+    ).encode("utf-8")
 
     req = urllib_request.Request(
         CHAT_API_URL,
@@ -30,7 +36,10 @@ def search_timeline(question: str) -> str:
     try:
         with urllib_request.urlopen(req, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8"))
-            return data.get("answer", "No answer was returned from the timeline.")
+            return data.get(
+                "answer",
+                "No answer was returned from the timeline.",
+            )
 
     except HTTPError as exc:
         logging.exception("Timeline /chat request returned an HTTP error")

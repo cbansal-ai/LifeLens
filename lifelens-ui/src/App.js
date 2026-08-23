@@ -11,7 +11,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
-  const [userEmail, setUserEmail] = useState("bansalchhaya100@gmail.com");
+  const [userEmail, setUserEmail] = useState("demolifelens@gmail.com");
   const [editingUser, setEditingUser] = useState(false);
   const [nextUserEmail, setNextUserEmail] = useState(userEmail);
   const [userError, setUserError] = useState("");

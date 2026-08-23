@@ -2,9 +2,20 @@
 
 LifeLens is a personal AI memory assistant that turns Gmail activity into a searchable life timeline and lets users ask questions about uploaded PDF documents using Retrieval-Augmented Generation (RAG).
 
+## Demo Account
+
+For portfolio and interview demonstrations, LifeLens uses the dedicated demo Gmail account:
+
+`demolifelens@gmail.com`
+
+The demo account contains sample data so the application can be demonstrated without requiring an interviewer or reviewer to connect a personal Gmail account.
+
+In a production deployment, each user would connect their own Gmail account through Google OAuth and LifeLens would scope stored events and queries to that authenticated user.
+
 ## Features
 
 - Gmail OAuth with read-only access
+- Dedicated demo Gmail account for portfolio demonstrations
 - LLM-based extraction of structured personal events from Gmail
 - User-specific timeline stored in Supabase/PostgreSQL
 - Agentic question routing using LangChain tools
@@ -93,20 +104,12 @@ A pre-built `rag/chroma_db` containing sample/demo document embeddings is intent
 ## Agent Tools
 
 ### `search_timeline`
+
 Searches Gmail-derived events for the active LifeLens user.
 
-Example questions:
-- When is my next trip?
-- What did I buy last month?
-- When was my doctor appointment?
-
 ### `search_documents`
-Searches uploaded PDFs using RAG.
 
-Example questions:
-- What does this policy cover?
-- Summarize this document.
-- Find the cancellation terms.
+Searches uploaded PDFs using RAG.
 
 ## Privacy
 
@@ -122,7 +125,7 @@ SUPABASE_KEY=...
 
 Google OAuth credentials should be stored locally in `credentials.json`.
 
-The committed ChromaDB should contain demo/sample data only.
+The committed ChromaDB should contain demo/sample data only. The public repository should not contain personal Gmail data, OAuth tokens, or private uploaded documents.
 
 ## Run Locally
 
@@ -145,10 +148,12 @@ npm start
 
 ## MVP Design
 
+- The default UI account is `demolifelens@gmail.com`.
 - Timeline data comes from Gmail-derived structured events.
 - PDFs are used separately for RAG-based question answering.
 - The agent chooses the correct tool automatically.
 - LifeLens currently supports one active Gmail user at a time.
+- The demo account avoids requiring reviewers to connect their own Gmail during a portfolio demonstration.
 
 ## Future Enhancements
 

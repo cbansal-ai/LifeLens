@@ -1,71 +1,54 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
+from langchain_chroma import Chroma
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from langchain_openai import OpenAIEmbeddings
-from openai import chat
-from langchain_chroma import Chroma
-from dotenv import load_dotenv
-
-
-# Load environment variables (.env)
 load_dotenv()
 
-# -------------------------
-# Step 1: Load PDF
-# -------------------------
-loader = PyPDFLoader("rag/documents/insurance.pdf")
-documents = loader.load()
+BASE_DIR = Path(__file__).resolve().parent
+CHROMA_DIR = BASE_DIR / "chroma_db"
+DOCUMENTS_DIR = BASE_DIR / "documents"
 
-print(f"Loaded {len(documents)} page(s)")
 
-# -------------------------
-# Step 2: Split into chunks
-# -------------------------
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=50,
-)
+def index_pdf(file_path):
+    """Load one PDF, split it into chunks, and add it to the LifeLens Chroma index."""
+    path = Path(file_path)
+    loader = PyPDFLoader(str(path))
+    documents = loader.load()
 
-chunks = text_splitter.split_documents(documents)
+    for document in documents:
+        document.metadata["source"] = path.name
 
-print(f"Created {len(chunks)} chunks")
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50,
+    )
+    chunks = text_splitter.split_documents(documents)
 
-# -------------------------
-# Step 3: Create embeddings
-# -------------------------
-embeddings = OpenAIEmbeddings()
+    embeddings = OpenAIEmbeddings()
+    vectorstore = Chroma(
+        persist_directory=str(CHROMA_DIR),
+        embedding_function=embeddings,
+    )
+    vectorstore.add_documents(chunks)
 
-# -------------------------
-# Step 4: Store in ChromaDB
-# -------------------------
-vectorstore = Chroma.from_documents(
-    documents=chunks,
-    embedding=embeddings,
-    persist_directory="rag/chroma_db",
-)
-
-print("Documents successfully stored in ChromaDB!")
+    return {
+        "pages": len(documents),
+        "chunks": len(chunks),
+        "filename": path.name,
+    }
 
 
 if __name__ == "__main__":
+    default_pdf = DOCUMENTS_DIR / "insurance.pdf"
+    if not default_pdf.exists():
+        raise FileNotFoundError(f"PDF not found: {default_pdf}")
 
-    
-    embeddings = OpenAIEmbeddings()
-
-    vectorstore = Chroma(
-
-        persist_directory="rag/chroma_db",
-
-        embedding_function=embeddings,
-
-        )
-
-data = vectorstore.get()
-
-print(data.keys())
-
-for i, doc in enumerate(data["data"]):
-    print(f"\nChunk {i+1}")
-    print(doc)
-    print("-" * 80)
-    break
+    result = index_pdf(default_pdf)
+    print(
+        f"Indexed {result['filename']}: "
+        f"{result['pages']} page(s), {result['chunks']} chunks"
+    )

@@ -27,17 +27,41 @@ def extract_body(payload):
     return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
 
 
-def authenticate_gmail(): # 11111 
-    """Authenticate with Gmail."""
+def authenticate_gmail(expected_email=None, force_consent=False):
+    """Authenticate with Gmail and optionally verify the selected account."""
 
     flow = InstalledAppFlow.from_client_secrets_file(
         "credentials.json",
         SCOPES,
     )
 
-    creds = flow.run_local_server(port=0)
+    oauth_kwargs = {}
 
-    return build("gmail", "v1", credentials=creds)
+    if expected_email:
+        oauth_kwargs["login_hint"] = expected_email
+
+    if force_consent:
+        # Force Google to show account selection/consent for Change User.
+        oauth_kwargs["prompt"] = "consent select_account"
+
+    creds = flow.run_local_server(
+        port=0,
+        **oauth_kwargs,
+    )
+
+    service = build("gmail", "v1", credentials=creds)
+
+    if expected_email:
+        profile = service.users().getProfile(userId="me").execute()
+        authenticated_email = profile["emailAddress"].strip().lower()
+
+        if authenticated_email != expected_email.strip().lower():
+            raise ValueError(
+                f"The Google account selected ({authenticated_email}) does not match "
+                f"the Gmail address entered ({expected_email})."
+            )
+
+    return service
 
 
 def fetch_emails(service):  # 2222 

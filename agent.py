@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 
 from tools.pdf_tool import search_documents
-from tools.gmail_tool import search_gmail
 from tools.timeline_tool import search_timeline
 
 load_dotenv()
@@ -16,7 +15,6 @@ agent = create_agent(
     model="openai:gpt-4.1-mini",
     tools=[
         search_documents,
-        search_gmail,
         search_timeline,
     ],
     system_prompt="""

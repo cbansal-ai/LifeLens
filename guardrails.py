@@ -67,6 +67,8 @@ Return YES if the question is asking about the user's own:
 
 - travel
 
+- flight
+
 - personal events
 
 - personal information stored in LifeLens

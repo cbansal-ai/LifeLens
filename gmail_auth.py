@@ -12,7 +12,6 @@ from constants import icons
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
-
 def extract_body(payload):
     """Extract email body."""
 

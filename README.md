@@ -66,6 +66,8 @@ Retriever
 LLM Answer
 ```
 
+A pre-built `rag/chroma_db` containing sample/demo document embeddings is intentionally included in this repository so the RAG workflow can be demonstrated immediately.
+
 ## Tech Stack
 
 ### AI / LLM
@@ -119,6 +121,8 @@ SUPABASE_KEY=...
 ```
 
 Google OAuth credentials should be stored locally in `credentials.json`.
+
+The committed ChromaDB should contain demo/sample data only.
 
 ## Run Locally
 

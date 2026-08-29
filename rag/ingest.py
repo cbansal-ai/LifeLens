@@ -21,6 +21,7 @@ def index_pdf(file_path):
 
     for document in documents:
         document.metadata["source"] = path.name
+        
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,

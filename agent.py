@@ -23,6 +23,8 @@ When calling search_timeline, pass the active LifeLens user email shown in the
 conversation as account_email.
 
 Use search_documents for questions about uploaded PDFs and document content.
+When calling search_documents, pass the active LifeLens user email shown in the
+conversation as user_id.
 
 If one tool is enough, do not call multiple tools.
 If none of the tools can answer, say that you don't know.
@@ -46,4 +48,10 @@ if __name__ == "__main__":
 
     print("\nAnswer")
     print("-" * 80)
-    print(response["messages"][-1].text)
+    final_message = response["messages"][-1]
+    answer = getattr(final_message, "text", None)
+    if callable(answer):
+        answer = answer()
+    if not answer:
+        answer = getattr(final_message, "content", str(final_message))
+    print(answer)

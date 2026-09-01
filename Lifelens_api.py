@@ -25,7 +25,6 @@ DOCUMENTS_DIR = BASE_DIR / "rag" / "documents"
 DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
 MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024
 
-# Allow the local React UI to communicate with FastAPI.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -92,41 +91,63 @@ def change_user(request: ChangeUserRequest):
 
 
 @app.post("/documents/upload")
-async def upload_document(file: UploadFile = File(...)):
-    """Validate, save, and index an uploaded PDF into the LifeLens ChromaDB."""
+async def upload_document(
+    file: UploadFile = File(...),
+    account_email: str = Query(..., min_length=1),
+):
+    """Validate, save, and index a PDF for the active LifeLens user."""
     filename = Path(file.filename or "").name
+    user_id = account_email.strip().lower()
 
     if not filename or not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a PDF file.")
 
+    if not user_id:
+        raise HTTPException(status_code=400, detail="An active Gmail account is required.")
+
     contents = await file.read()
 
     if not contents.startswith(b"%PDF-"):
-        raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is not a valid PDF.",
+        )
 
     if len(contents) > MAX_PDF_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="PDF must be 10 MB or smaller.")
+        raise HTTPException(
+            status_code=400,
+            detail="PDF must be 10 MB or smaller.",
+        )
 
     destination = DOCUMENTS_DIR / filename
 
     try:
         destination.write_bytes(contents)
-        result = index_pdf(destination)
+
+        result = index_pdf(
+            destination,
+            user_id=user_id,
+        )
+
+        # Keep a duplicate upload as a normal response, but return a clear message.
+        return {
+            **result,
+            "message": result.get("message", "PDF processed successfully."),
+        }
+
     except Exception as exc:
         logging.exception("PDF upload/indexing failed")
+
         if destination.exists():
             destination.unlink(missing_ok=True)
+
         raise HTTPException(
             status_code=500,
-            detail="Could not index the uploaded PDF.",
+            detail=f"Could not index the uploaded PDF: {str(exc)}",
         ) from exc
+
     finally:
         await file.close()
-
-    return {
-        "message": "PDF uploaded and indexed successfully.",
-        **result,
-    }
 
 
 @app.post("/chat")
@@ -145,7 +166,8 @@ def chat(request: ChatRequest):
             detail="An active Gmail account is required to search the timeline.",
         )
 
-    events = get_all_events(request.account_email)
+    account_email = request.account_email.strip().lower()
+    events = get_all_events(account_email)
     answer = ask_llm(events, request.question)
 
     logging.info("Timeline answer returned successfully")
@@ -180,12 +202,20 @@ def run_agent(request: ChatRequest):
         logging.warning(message)
         raise HTTPException(status_code=400, detail=message)
 
-    user_content = request.question
-    if request.account_email:
-        user_content = (
-            f"Active LifeLens user: {request.account_email}\n"
-            f"Question: {request.question}"
+    if not request.account_email:
+        raise HTTPException(
+            status_code=400,
+            detail="An active Gmail account is required.",
         )
+
+    account_email = request.account_email.strip().lower()
+
+    # Give the agent the authenticated user ID so document tools can use it.
+    user_content = (
+        f"Active LifeLens user_id: {account_email}\n"
+        f"When calling a tool that requires user_id, use exactly: {account_email}\n"
+        f"Question: {request.question}"
+    )
 
     try:
         response = agent.invoke(
@@ -240,4 +270,4 @@ def run_agent(request: ChatRequest):
 @app.get("/timeline")
 def timeline(account_email: str = Query(..., min_length=1)):
     """Return Gmail-derived timeline events for the active user only."""
-    return get_all_events(account_email)
+    return get_all_events(account_email.strip().lower())

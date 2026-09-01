@@ -84,10 +84,13 @@ function App() {
     formData.append("file", file);
 
     try {
-      const response = await fetch(`${API_BASE}/documents/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(
+        `${API_BASE}/documents/upload?account_email=${encodeURIComponent(userEmail)}`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Upload failed.");
 

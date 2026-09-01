@@ -1,51 +1,13 @@
-from langchain.tools import tool
-from rag.retrieve import retrieval_chain, vectorstore
-import logging
+from pathlib import Path
+import sys
 
+# Allow this file to work both when imported by LifeLens and when run/debugged directly.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-@tool
-def search_documents(question: str) -> str:
-    """
-    Search PDFs that have already been indexed in LifeLens ChromaDB.
+# Re-export the user-scoped RAG tool defined in rag/retrieve.py.
+from rag.retrieve import search_documents
 
-    The PDFs are indexed by rag/ingest.py and stored in rag/chroma_db.
-    This tool retrieves the most relevant document chunks and then uses
-    the existing RAG retrieval chain to generate the answer.
-    """
-    logging.info("PDF Tool selected")
+' __all__ = ["search_documents"] '
 
-    try:
-        # First verify that indexed document chunks are available.
-        matches = vectorstore.similarity_search(question, k=3)
-
-        if not matches:
-            logging.info("No indexed PDF chunks found")
-            return (
-                "I couldn't find any relevant information in the uploaded documents. "
-                "Please upload and index a PDF first."
-            )
-
-        # Use the existing RAG pipeline in rag/retrieve.py.
-        response = retrieval_chain.invoke({"input": question})
-        answer = response.get("answer")
-
-        if not answer:
-            return "I couldn't find an answer in the uploaded documents."
-
-        # Include source filenames when metadata is available.
-        sources = sorted(
-            {
-                doc.metadata.get("source")
-                for doc in matches
-                if doc.metadata.get("source")
-            }
-        )
-
-        if sources:
-            return f"{answer}\n\nSource: {', '.join(sources)}"
-
-        return answer
-
-    except Exception as exc:
-        logging.exception("PDF document search failed: %s", exc)
-        return "Sorry, I couldn't access the uploaded documents right now."

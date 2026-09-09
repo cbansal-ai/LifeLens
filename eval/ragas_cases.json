@@ -1,0 +1,14 @@
+[
+  {
+    "question": "REPLACE: question whose answer is in one of your uploaded PDFs",
+    "reference": "REPLACE: manually verified answer from that PDF"
+  },
+  {
+    "question": "REPLACE: second document question",
+    "reference": "REPLACE: manually verified answer"
+  },
+  {
+    "question": "REPLACE: third document question",
+    "reference": "REPLACE: manually verified answer"
+  }
+]

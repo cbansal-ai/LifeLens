@@ -1,14 +1,4 @@
-"""
-LifeLens multi-source orchestrator.
-
-Routes a question to:
-- Gmail-derived timeline events
-- PDF RAG
-- Business Text-to-SQL
-
-For hybrid questions, it calls multiple specialized paths and synthesizes
-one final answer from their grounded outputs.
-"""
+"""LifeLens multi-source orchestrator with structured observability."""
 
 import logging
 import os
@@ -18,7 +8,8 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
 from llm_extractor import ask_llm
-from rag.retrieve import search_documents
+from observability import log_event, new_trace_id, observed_step, user_hash
+from rag.retrieve import search_documents_with_details
 from router import route_question
 from sql_agent import ask_business
 from supabase_client import get_all_events
@@ -31,57 +22,28 @@ MODEL_NAME = os.getenv("ORCHESTRATOR_MODEL", "gpt-4.1-mini")
 def _llm() -> ChatOpenAI:
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is not configured.")
-
-    return ChatOpenAI(
-        model=MODEL_NAME,
-        temperature=0,
-    )
+    return ChatOpenAI(model=MODEL_NAME, temperature=0)
 
 
 def _timeline_answer(account_email: str, question: str) -> str:
-    """
-    Search structured Gmail-derived events already stored in PostgreSQL.
-    """
     events = get_all_events(account_email)
     if not events:
         return "No matching Gmail-derived timeline events are available."
-
     return ask_llm(events, question)
 
 
-def _document_answer(account_email: str, question: str) -> str:
-    """
-    Search only PDFs belonging to the active LifeLens user.
-    """
-    return search_documents.invoke(
-        {
-            "question": question,
-            "user_id": account_email,
-        }
+def _document_answer(account_email: str, question: str) -> dict[str, Any]:
+    return search_documents_with_details(
+        question=question,
+        user_id=account_email,
     )
 
 
 def _business_answer(account_email: str, question: str) -> dict[str, Any]:
-    """
-    Run the guarded Text-to-SQL business pipeline.
-
-    account_email is used by the backend to resolve the trusted business_id.
-    """
-    return ask_business(
-        email=account_email,
-        question=question,
-    )
+    return ask_business(email=account_email, question=question)
 
 
-def _synthesize(
-    question: str,
-    source_answers: dict[str, str],
-) -> str:
-    """
-    Combine multiple grounded source answers.
-
-    The synthesis model gets only source outputs, not direct DB/vector access.
-    """
+def _synthesize(question: str, source_answers: dict[str, str]) -> str:
     source_text = "\n\n".join(
         f"{source.upper()} RESULT:\n{answer}"
         for source, answer in source_answers.items()
@@ -102,7 +64,6 @@ User question:
 Source results:
 {source_text}
 """
-
     response = _llm().invoke(prompt)
     return response.content
 
@@ -110,15 +71,8 @@ Source results:
 def ask_lifelens(
     account_email: str,
     question: str,
+    trace_id: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Main LifeLens orchestration entry point.
-
-    Identity boundary:
-    - The backend supplies account_email.
-    - The router never selects account_email or business_id.
-    - The business agent resolves business_id deterministically from email.
-    """
     email = (account_email or "").strip().lower()
     question = (question or "").strip()
 
@@ -127,36 +81,55 @@ def ask_lifelens(
     if not question:
         raise ValueError("Question cannot be empty.")
 
-    decision = route_question(question)
-    logging.info(
-        "LifeLens route selected: %s | reason=%s",
-        decision.sources,
-        decision.reason,
+    trace_id = trace_id or new_trace_id()
+    hashed_user = user_hash(email)
+
+    log_event(
+        "request.received",
+        trace_id=trace_id,
+        user=hashed_user,
+        question_length=len(question),
     )
+
+    with observed_step("router", trace_id=trace_id, user=hashed_user) as obs:
+        decision = route_question(question)
+        obs["sources"] = decision.sources
+        obs["reason"] = decision.reason
 
     source_answers: dict[str, str] = {}
     details: dict[str, Any] = {}
 
     for source in decision.sources:
         try:
-            if source == "timeline":
-                answer = _timeline_answer(email, question)
-                source_answers["timeline"] = answer
+            with observed_step(
+                f"source.{source}",
+                trace_id=trace_id,
+                user=hashed_user,
+            ) as obs:
+                if source == "timeline":
+                    answer = _timeline_answer(email, question)
+                    source_answers["timeline"] = answer
 
-            elif source == "documents":
-                answer = _document_answer(email, question)
-                source_answers["documents"] = answer
+                elif source == "documents":
+                    document_result = _document_answer(email, question)
+                    source_answers["documents"] = document_result["answer"]
+                    details["documents"] = {
+                        "retrieved_context_count": len(document_result["contexts"]),
+                        "retrieved_metadata": document_result["metadata"],
+                    }
+                    obs["retrieved_context_count"] = len(
+                        document_result["contexts"]
+                    )
 
-            elif source == "business":
-                business_result = _business_answer(email, question)
-                source_answers["business"] = business_result["answer"]
-
-                # Keep SQL visible for development/evaluation/observability.
-                details["business"] = {
-                    "sql": business_result.get("sql"),
-                    "sql_explanation": business_result.get("sql_explanation"),
-                    "row_count": business_result.get("row_count"),
-                }
+                elif source == "business":
+                    business_result = _business_answer(email, question)
+                    source_answers["business"] = business_result["answer"]
+                    details["business"] = {
+                        "sql": business_result.get("sql"),
+                        "sql_explanation": business_result.get("sql_explanation"),
+                        "row_count": business_result.get("row_count"),
+                    }
+                    obs["row_count"] = business_result.get("row_count")
 
         except Exception as exc:
             logging.exception("LifeLens source failed: %s", source)
@@ -168,10 +141,24 @@ def ask_lifelens(
     if len(source_answers) == 1:
         final_answer = next(iter(source_answers.values()))
     else:
-        final_answer = _synthesize(
-            question=question,
-            source_answers=source_answers,
-        )
+        with observed_step(
+            "synthesis",
+            trace_id=trace_id,
+            source_count=len(source_answers),
+        ):
+            final_answer = _synthesize(
+                question=question,
+                source_answers=source_answers,
+            )
+
+    log_event(
+        "request.completed",
+        trace_id=trace_id,
+        user=hashed_user,
+        sources=decision.sources,
+        source_count=len(source_answers),
+        error_sources=list(details.get("errors", {}).keys()),
+    )
 
     return {
         "answer": final_answer,
@@ -179,22 +166,5 @@ def ask_lifelens(
         "route_reason": decision.reason,
         "source_answers": source_answers,
         "details": details,
+        "trace_id": trace_id,
     }
-
-
-if __name__ == "__main__":
-    test_email = "demolifelens@gmail.com"
-
-    examples = [
-        "When is my next trip?",
-        "What were my total sales last month?",
-        "What does my uploaded insurance document say about the deductible?",
-        "I'm going to New York next week. Which of my top customers are there?",
-    ]
-
-    for q in examples:
-        print("\n" + "=" * 80)
-        print("QUESTION:", q)
-        result = ask_lifelens(test_email, q)
-        print("SOURCES:", result["sources"])
-        print("ANSWER:", result["answer"])

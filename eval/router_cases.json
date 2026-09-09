@@ -1,0 +1,39 @@
+[
+  {
+    "question": "When is my next trip?",
+    "expected_sources": [
+      "timeline"
+    ]
+  },
+  {
+    "question": "What does my uploaded insurance policy say about the deductible?",
+    "expected_sources": [
+      "documents"
+    ]
+  },
+  {
+    "question": "What were my sales last month?",
+    "expected_sources": [
+      "business"
+    ]
+  },
+  {
+    "question": "Who are my top five customers by revenue?",
+    "expected_sources": [
+      "business"
+    ]
+  },
+  {
+    "question": "What hotel is listed in my uploaded Paris itinerary?",
+    "expected_sources": [
+      "documents"
+    ]
+  },
+  {
+    "question": "I'm going to New York next week. Which of my top customers are there?",
+    "expected_sources": [
+      "timeline",
+      "business"
+    ]
+  }
+]

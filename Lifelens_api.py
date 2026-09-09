@@ -6,10 +6,10 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from agent import agent
 from gmail_auth import authenticate_gmail
 from guardrails import validate_input
 from llm_extractor import ask_llm
+from orchestrator import ask_lifelens
 from rag.ingest import index_pdf
 from supabase_client import get_all_events
 
@@ -129,7 +129,6 @@ async def upload_document(
             user_id=user_id,
         )
 
-        # Keep a duplicate upload as a normal response, but return a clear message.
         return {
             **result,
             "message": result.get("message", "PDF processed successfully."),
@@ -152,7 +151,10 @@ async def upload_document(
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    """Answer a question using Gmail-derived events for the active user."""
+    """
+    Legacy/direct endpoint for Gmail-derived timeline questions only.
+    Kept so existing timeline behavior continues to work.
+    """
     logging.info("Timeline question received")
 
     valid, message = validate_input(request.question)
@@ -174,28 +176,18 @@ def chat(request: ChatRequest):
     return {"answer": answer}
 
 
-def _extract_tool_name(messages):
-    """Return the most recently used LangChain tool name, when available."""
-    for message in reversed(messages):
-        if getattr(message, "type", None) == "tool":
-            tool_name = getattr(message, "name", None)
-            if tool_name:
-                return tool_name
-
-        tool_calls = getattr(message, "tool_calls", None)
-        if tool_calls:
-            last_call = tool_calls[-1]
-            if isinstance(last_call, dict):
-                return last_call.get("name")
-            return getattr(last_call, "name", None)
-
-    return None
-
-
 @app.post("/agent")
 def run_agent(request: ChatRequest):
-    """Route the user's question through the LifeLens tool-calling agent."""
-    logging.info("Agent question received")
+    """
+    Main LifeLens orchestrator endpoint.
+
+    Routes among:
+    - Gmail-derived timeline data
+    - PDF RAG
+    - Business Text-to-SQL
+    - combinations of those sources
+    """
+    logging.info("Orchestrator question received")
 
     valid, message = validate_input(request.question)
     if not valid:
@@ -210,60 +202,27 @@ def run_agent(request: ChatRequest):
 
     account_email = request.account_email.strip().lower()
 
-    # Give the agent the authenticated user ID so document tools can use it.
-    user_content = (
-        f"Active LifeLens user_id: {account_email}\n"
-        f"When calling a tool that requires user_id, use exactly: {account_email}\n"
-        f"Question: {request.question}"
-    )
-
     try:
-        response = agent.invoke(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": user_content,
-                    }
-                ]
-            }
+        result = ask_lifelens(
+            account_email=account_email,
+            question=request.question,
         )
 
-        messages = response.get("messages", [])
-        if not messages:
-            raise RuntimeError("Agent returned no messages.")
+        logging.info(
+            "Orchestrator answer returned successfully | sources=%s",
+            result["sources"],
+        )
 
-        final_message = messages[-1]
+        return result
 
-        answer = getattr(final_message, "text", None)
-        if callable(answer):
-            answer = answer()
-
-        if not answer:
-            answer = getattr(final_message, "content", None)
-
-        if isinstance(answer, list):
-            answer = " ".join(
-                block.get("text", "") if isinstance(block, dict) else str(block)
-                for block in answer
-            ).strip()
-
-        if not answer:
-            answer = str(final_message)
-
-        selected_tool = _extract_tool_name(messages)
-        logging.info("Agent answer returned successfully")
-
-        return {
-            "answer": answer,
-            "tool": selected_tool or "Agent",
-        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     except Exception as exc:
-        logging.exception("Agent execution failed")
+        logging.exception("LifeLens orchestration failed")
         raise HTTPException(
             status_code=500,
-            detail=f"LifeLens agent failed: {str(exc)}",
+            detail=f"LifeLens orchestration failed: {str(exc)}",
         ) from exc
 
 
